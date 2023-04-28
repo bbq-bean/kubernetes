@@ -1,0 +1,75 @@
+#
+# local management setup
+#
+
+# get jq
+sudo yum install -y jq
+
+# install awscli
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+
+# install kops and kubectl
+
+curl -Lo kOps https://github.com/kubernetes/kOps/releases/download/$(curl -s https://api.github.com/repos/kubernetes/kOps/releases/latest | grep tag_name | cut -d '"' -f 4)/kOps-linux-amd64
+
+sudo chmod +x kOps
+sudo mv kOps /usr/local/bin/kOps
+
+curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+
+chmod +x kubectl
+sudo mv kubectl /usr/local/bin/kubectl
+
+echo "alias k=kubectl" >> /home/ec2-user/.bashrc
+echo "alias kops=kOps" >> /home/ec2-user/.bashrc
+
+
+#
+# create kops cluster
+#
+
+# choose a unique name for cluster
+# s3 bucket will have the same name
+export KOPS_INSTALL_NAME=kops-gdsfgdf987435rfshdf349
+
+export AWS_REGION=us-west-1
+
+mkdir $KOPS_INSTALL_NAME
+cd $KOPS_INSTALL_NAME
+
+export KOPS_S3_BUCKET=$( aws s3api create-bucket \
+--bucket $KOPS_INSTALL_NAME \
+--region $AWS_REGION \
+--create-bucket-configuration LocationConstraint=us-west-1 | jq -r .Location | cut -d '/' -f 3 | cut -d '.' -f 1 )
+
+echo "s3 bucket is $KOPS_S3_BUCKET"
+
+aws s3api put-bucket-versioning --bucket $KOPS_S3_BUCKET --versioning-configuration Status=Enabled
+
+export kOps_CLUSTER_NAME=kopsdemo1.k8s.local
+export kOps_STATE_STORE=s3://$KOPS_S3_BUCKET
+export KOPS_STATE_STORE=s3://$KOPS_S3_BUCKET
+
+ssh-keygen -t dsa -N "" -f /home/ec2-user/id_rsa
+
+# note janky --zones=$AWS_REGIONb becase AZ 'b' exists in every AWS region
+kOps create cluster --name=${kOps_CLUSTER_NAME} --state=s3://$KOPS_S3_BUCKET --zones=${AWS_REGION}b --node-count=2
+
+
+# Finally configure your cluster with: 
+kOps update cluster --name kopsdemo1.k8s.local --yes --admin
+
+
+#
+# VERIFY
+#
+
+kOps validate cluster --wait 10m
+
+kOps get cluster
+
+kubectl get nodes
+
+kubectl get pods -A
