@@ -25,14 +25,16 @@ sudo mv kubectl /usr/local/bin/kubectl
 echo "alias k=kubectl" >> /home/ec2-user/.bashrc
 echo "alias kops=kOps" >> /home/ec2-user/.bashrc
 
+source /home/ec2-user/.bashrc
+
 
 #
 # create kops cluster
 #
 
-# choose a unique name for cluster
+# choose a unique name for cluster, must start with 'kops-' for this script
 # s3 bucket will have the same name
-export KOPS_INSTALL_NAME=kops-gdsfgdf987435rfshdf349
+export KOPS_INSTALL_NAME=kops-fsdfjk3473fhasdfn
 
 export AWS_REGION=us-west-1
 
@@ -48,18 +50,16 @@ echo "s3 bucket is $KOPS_S3_BUCKET"
 
 aws s3api put-bucket-versioning --bucket $KOPS_S3_BUCKET --versioning-configuration Status=Enabled
 
-export kOps_CLUSTER_NAME=kopsdemo1.k8s.local
+export kOps_CLUSTER_NAME=`echo ${KOPS_INSTALL_NAME} | cut -c 6- `.k8s.local
 export kOps_STATE_STORE=s3://$KOPS_S3_BUCKET
 export KOPS_STATE_STORE=s3://$KOPS_S3_BUCKET
 
-ssh-keygen -t dsa -N "" -f /home/ec2-user/id_rsa
+ssh-keygen -t rsa -N "" -f id_rsa
 
-# note janky --zones=$AWS_REGIONb becase AZ 'b' exists in every AWS region
-kOps create cluster --name=${kOps_CLUSTER_NAME} --state=s3://$KOPS_S3_BUCKET --zones=${AWS_REGION}b --node-count=2
-
+kOps create cluster --name=${kOps_CLUSTER_NAME} --state=s3://$KOPS_S3_BUCKET --zones=${AWS_REGION}b --node-count=2 --networking cilium --ssh-public-key id_rsa.pub
 
 # Finally configure your cluster with: 
-kOps update cluster --name kopsdemo1.k8s.local --yes --admin
+kOps update cluster --name $kOps_CLUSTER_NAME --yes --admin
 
 
 #
@@ -68,8 +68,7 @@ kOps update cluster --name kopsdemo1.k8s.local --yes --admin
 
 kOps validate cluster --wait 10m
 
-kOps get cluster
+k get nodes -o wide
 
-kubectl get nodes
-
-kubectl get pods -A
+chmod 600 id_rsa
+ssh -i id_rsa ubuntu@<control-plane IP>
